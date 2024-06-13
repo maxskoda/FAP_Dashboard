@@ -166,7 +166,11 @@ def fill_dropdown(portal_file):
         raise PreventUpdate
 
     xls = pd.ExcelFile(portal_file)
-    return xls.sheet_names
+    sheetnames = xls.sheet_names
+    print(sheetnames.sort())
+    return sheetnames
+
+
 
 @app.callback(
     Output('rb-numbers', 'options'),
@@ -195,7 +199,8 @@ def update_rb_numbers_options(selected_instrument, portal_file, scores_file):
         rb_options = [{'label': str(rb), 'value': str(rb)} for rb in
                       combined_df[combined_df['Instrument'] == selected_instrument][
                           'Proposal Reference Number'].unique()]
-    return rb_options
+    sorted_rb_options = sorted(rb_options, key=lambda x: x["label"])
+    return sorted_rb_options
 
 
 @app.callback(
