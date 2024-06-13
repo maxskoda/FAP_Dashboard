@@ -1,4 +1,5 @@
 import atexit
+import zipfile
 
 from dash import Dash, dcc, html, Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -6,33 +7,6 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 
 from openpyxl import load_workbook
-
-# Path to the Excel file and scores file
-excel_file = 'C:/Users/ktd43279/Downloads/Fap-FAP9_-_Reflectometry-ISIS_Direct_2024_2 (2).xlsx'
-scores_file = 'C:/Users/ktd43279/Downloads/FAP9.xlsx'
-
-# Load FAP scores files
-wb = load_workbook(filename=scores_file)
-sheet_ranges = wb['Proposals']
-wb.close()
-
-# List of sheet names
-sheet_names = ['Inter', 'Polref', 'Offspec', 'Surf']
-
-# Initialize an empty list to store DataFrames
-df_list = []
-
-# Iterate over each sheet
-for sheet_name in sheet_names:
-    # Read the sheet into a DataFrame
-    df = pd.read_excel(excel_file, sheet_name=sheet_name)
-    # Add a new column with the sheet name
-    df['Instrument'] = sheet_name
-    # Append the DataFrame to the list
-    df_list.append(df)
-
-# Concatenate all DataFrames into a single DataFrame
-combined_df = pd.concat(df_list, ignore_index=True)
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])  # SLATE also good
 
@@ -54,14 +28,8 @@ textarea_style = {
     'color': '#fff',  # Match the text color of the card
 }
 
-
-# Function to close the Excel file when the server stops
-def close_excel_file():
-    wb.close()
-
-
-# Register the close_excel_file function to be called when the program exits
-atexit.register(close_excel_file)
+# Define sheet names globally
+sheet_names = ['Inter', 'Polref', 'Offspec', 'Surf']
 
 tab1_content = dbc.Container([
     # html.H2(children='FAP 9', style={'textAlign': 'center', 'fontSize': '1.5rem'}),  # fontsize adjusted
@@ -151,7 +119,8 @@ tab1_content = dbc.Container([
                     dbc.Col(dbc.Card(dbc.CardBody(id="tech-comments", style={'height': '150px', 'overflow': 'auto'})),
                             width=5),
                     dbc.Col(html.Div("Feedback comments: ")),
-                    dbc.Col(dbc.Textarea(id="feedback", style=textarea_style), # {'height': '150px', 'width': '100%', 'overflow': 'auto'}
+                    dbc.Col(dbc.Textarea(id="feedback", style=textarea_style),
+                            # {'height': '150px', 'width': '100%', 'overflow': 'auto'}
                             width=5)
                 ],
                 justify="start"
@@ -175,7 +144,7 @@ tab2_content = dbc.Card([
     html.Div("Final scores file: "),
     dbc.Input(id='scores-file', type="text", placeholder="Scores file",
               debounce=True, style={'height': '30px'})
-    ]
+]
 )
 
 tabs = dbc.Tabs(
@@ -190,9 +159,22 @@ app.layout = tabs
 
 @app.callback(
     Output('rb-numbers', 'options'),
-    Input('instrument', 'value')
+    Input('instrument', 'value'),
+    State('portal-file', 'value'),
+    State('scores-file', 'value')
 )
-def update_rb_numbers_options(selected_instrument):
+def update_rb_numbers_options(selected_instrument, portal_file, scores_file):
+    if not portal_file or not scores_file:
+        raise PreventUpdate
+
+    # Load the new data
+    df_list = []
+    for sheet_name in sheet_names:
+        df = pd.read_excel(portal_file, sheet_name=sheet_name)
+        df['Instrument'] = sheet_name
+        df_list.append(df)
+    combined_df = pd.concat(df_list, ignore_index=True)
+
     if selected_instrument == 'All':
         rb_options = [{'label': str(rb), 'value': str(rb)} for rb in combined_df['Proposal Reference Number'].unique()]
     else:
@@ -217,11 +199,21 @@ def update_rb_numbers_options(selected_instrument):
     Output('instrument', 'value'),
     Output('feedback', 'value'),
     Input('rb-numbers', 'value'),
-    State('instrument', 'value')
+    State('instrument', 'value'),
+    State('portal-file', 'value'),
+    State('scores-file', 'value')
 )
-def update_details(rb_number, selected_instrument):
-    if rb_number is None:
+def update_details(rb_number, selected_instrument, portal_file, scores_file):
+    if rb_number is None or not portal_file or not scores_file:
         raise PreventUpdate
+
+    # Load the new data
+    df_list = []
+    for sheet_name in sheet_names:
+        df = pd.read_excel(portal_file, sheet_name=sheet_name)
+        df['Instrument'] = sheet_name
+        df_list.append(df)
+    combined_df = pd.concat(df_list, ignore_index=True)
 
     # Filter the combined DataFrame for the selected Proposal Reference Number
     df_filtered = combined_df[combined_df['Proposal Reference Number'] == int(rb_number)]
@@ -244,6 +236,8 @@ def update_details(rb_number, selected_instrument):
     instrument = df_filtered['Instrument'].values[0] if 'Instrument' in df_filtered.columns else selected_instrument
 
     # Extract the final score and feedback from the Excel file
+    wb = load_workbook(filename=scores_file)
+    sheet_ranges = wb['Proposals']
     final_score = 'N/A'
     feedback_comment = 'N/A'
     for row in sheet_ranges.iter_rows(min_row=2, max_row=sheet_ranges.max_row, values_only=True):
@@ -253,6 +247,7 @@ def update_details(rb_number, selected_instrument):
             if len(row) > 10:
                 feedback_comment = row[10] if row[10] is not None else 'N/A'
             break
+    wb.close()
 
     # Generate the link with the Proposal Reference Number
     link = (f"https://stfc365-my.sharepoint.com/personal/emma_gozzard_stfc_ac_uk/Documents/ISIS%20FAPs/24-2/FAP-Secs"
@@ -265,13 +260,16 @@ def update_details(rb_number, selected_instrument):
 @app.callback(
     Output('confirmation', 'children'),
     Input('final-score', 'value'),
-    State('rb-numbers', 'value')
+    State('rb-numbers', 'value'),
+    State('scores-file', 'value')
 )
-def update_final_score(final_score, rb_number):
-    if not rb_number or not final_score:
+def update_final_score(final_score, rb_number, scores_file):
+    if not rb_number or not final_score or not scores_file:
         raise PreventUpdate
 
     # Update the final score in the Excel file
+    wb = load_workbook(filename=scores_file)
+    sheet_ranges = wb['Proposals']
     updated = False
     for row in sheet_ranges.iter_rows(min_row=2, max_row=sheet_ranges.max_row):
         if row[0].value == int(rb_number):
@@ -281,33 +279,50 @@ def update_final_score(final_score, rb_number):
 
     if updated:
         wb.save(scores_file)
+        wb.close()
         return "Final score updated successfully!"
     else:
+        wb.close()
         return "Error: Proposal Reference Number not found."
 
+
+import os
 
 @app.callback(
     Output('confirmation2', 'children'),
     Input('feedback', 'value'),
-    State('rb-numbers', 'value')
+    State('rb-numbers', 'value'),
+    State('scores-file', 'value')
 )
-def update_feedback(feedback, rb_number):
-    if not rb_number or not feedback:
+def update_feedback(feedback, rb_number, scores_file):
+    if not rb_number or not feedback or not scores_file:
         raise PreventUpdate
 
-    # Update the final score in the Excel file
-    updated = False
-    for row in sheet_ranges.iter_rows(min_row=2, max_row=sheet_ranges.max_row):
-        if row[0].value == int(rb_number):
-            row[10].value = feedback
-            updated = True
-            break
+    if not os.path.exists(scores_file):
+        return "Error: Scores file does not exist."
 
-    if updated:
-        wb.save(scores_file)
-        return "Feedback updated successfully!"
-    else:
-        return "Error: Proposal Reference Number not found."
+    try:
+        # Update the feedback in the Excel file
+        wb = load_workbook(filename=scores_file)
+        sheet_ranges = wb['Proposals']
+        updated = False
+        for row in sheet_ranges.iter_rows(min_row=2, max_row=sheet_ranges.max_row):
+            if row[0].value == int(rb_number):
+                row[10].value = feedback
+                updated = True
+                break
+
+        if updated:
+            wb.save(scores_file)
+            wb.close()
+            return "Feedback updated successfully!"
+        else:
+            wb.close()
+            return "Error: Proposal Reference Number not found."
+    except zipfile.BadZipFile:
+        return "Error: The scores file is corrupted or incomplete."
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 
 if __name__ == '__main__':
