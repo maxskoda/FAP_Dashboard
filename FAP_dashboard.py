@@ -1,6 +1,6 @@
 import atexit
 import zipfile
-
+import os
 from dash import Dash, dcc, html, Input, Output, State
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
@@ -29,7 +29,7 @@ textarea_style = {
 }
 
 # Define sheet names globally
-sheet_names = ['Inter', 'Polref', 'Offspec', 'Surf']
+# sheet_names = ['Inter', 'Polref', 'Offspec', 'Surf']
 
 tab1_content = dbc.Container([
     # html.H2(children='FAP 9', style={'textAlign': 'center', 'fontSize': '1.5rem'}),  # fontsize adjusted
@@ -40,7 +40,7 @@ tab1_content = dbc.Container([
             dbc.Row(
                 [
                     dbc.Col(dcc.Dropdown(
-                        options=[{"label": i, "value": i} for i in ['All'] + sheet_names],
+                        options=[],  # [{"label": i, "value": i} for i in ['All'] + sheet_names],
                         id="instrument", value='All', style={'height': '30px'}),
                         width=2),
                     dbc.Col(html.H4(children='', id='title-link', style={
@@ -158,10 +158,22 @@ app.layout = tabs
 
 
 @app.callback(
+    Output('instrument', 'options'),
+    Input('portal-file', 'value')
+)
+def fill_dropdown(portal_file):
+    if not portal_file:
+        raise PreventUpdate
+
+    xls = pd.ExcelFile(portal_file)
+    return xls.sheet_names
+
+@app.callback(
     Output('rb-numbers', 'options'),
     Input('instrument', 'value'),
     State('portal-file', 'value'),
     State('scores-file', 'value')
+
 )
 def update_rb_numbers_options(selected_instrument, portal_file, scores_file):
     if not portal_file or not scores_file:
@@ -169,7 +181,9 @@ def update_rb_numbers_options(selected_instrument, portal_file, scores_file):
 
     # Load the new data
     df_list = []
-    for sheet_name in sheet_names:
+    xls = pd.ExcelFile(portal_file)
+
+    for sheet_name in xls.sheet_names:
         df = pd.read_excel(portal_file, sheet_name=sheet_name)
         df['Instrument'] = sheet_name
         df_list.append(df)
@@ -209,7 +223,8 @@ def update_details(rb_number, selected_instrument, portal_file, scores_file):
 
     # Load the new data
     df_list = []
-    for sheet_name in sheet_names:
+    xls = pd.ExcelFile(portal_file)
+    for sheet_name in xls.sheet_names:
         df = pd.read_excel(portal_file, sheet_name=sheet_name)
         df['Instrument'] = sheet_name
         df_list.append(df)
@@ -285,8 +300,6 @@ def update_final_score(final_score, rb_number, scores_file):
         wb.close()
         return "Error: Proposal Reference Number not found."
 
-
-import os
 
 @app.callback(
     Output('confirmation2', 'children'),
