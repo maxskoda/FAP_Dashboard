@@ -33,7 +33,7 @@ sheet_names = ['Inter', 'Polref', 'Offspec', 'Surf']
 
 tab1_content = dbc.Container([
     # html.H2(children='FAP 9', style={'textAlign': 'center', 'fontSize': '1.5rem'}),  # fontsize adjusted
-
+    dbc.Row(html.Br()),
     # Row 1
     html.Div(
         [
