@@ -5,6 +5,8 @@ from dash import Dash, dcc, html, Input, Output, State
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import pandas as pd
+from dash_extensions import EventListener
+from dash_bootstrap_components import Tooltip
 
 from openpyxl import load_workbook
 
@@ -64,6 +66,13 @@ tab1_content = dbc.Container([
                     dbc.Col(html.Div("Days: "), width=1, style={'textAlign': 'right'}),
                     dbc.Col(dcc.Input(id="days", type="text", placeholder="", readOnly=True, debounce=True,
                                       style={'width': '60px', 'height': '30px'}), width=2),
+                    # Adding Tooltip
+                    dbc.Tooltip(
+                        "Use Ctrl+Left Arrow and Ctrl+Right Arrow to navigate.",
+                        target="rb-numbers",
+                        placement="top",
+                        delay={'show': 0, 'hide': 20}
+                    ),
                 ],
                 justify="start"
             ),
@@ -154,7 +163,47 @@ tabs = dbc.Tabs(
     ]
 )
 
-app.layout = tabs
+# app.layout = tabs
+
+app.layout = html.Div([
+    tabs,
+    EventListener(
+        id="event-listener",
+        events=[{"event": "keydown", "props": ["ctrlKey", "key"]}]
+    )
+])
+
+
+@app.callback(
+    Output('rb-numbers', 'value'),
+    Input('event-listener', 'n_events'),
+    State('rb-numbers', 'options'),
+    State('rb-numbers', 'value'),
+    State('event-listener', 'event')
+)
+def handle_key_event(n_events, options, current_value, event):
+    if n_events is None or not event or event['ctrlKey'] is False:
+        raise PreventUpdate
+
+    if not options or not current_value:
+        raise PreventUpdate
+
+    # Find the index of the current value
+    current_index = next((index for (index, d) in enumerate(options) if d["value"] == current_value), None)
+
+    if current_index is None:
+        raise PreventUpdate
+
+    # Move to the next value if ArrowRight is pressed
+    if event['key'] == 'ArrowRight':
+        next_index = (current_index + 1) % len(options)
+    # Move to the previous value if ArrowLeft is pressed
+    elif event['key'] == 'ArrowLeft':
+        next_index = (current_index - 1) % len(options)
+    else:
+        raise PreventUpdate
+
+    return options[next_index]['value']
 
 
 @app.callback(
@@ -169,7 +218,6 @@ def fill_dropdown(portal_file):
     sheetnames = xls.sheet_names
     print(sheetnames.sort())
     return sheetnames
-
 
 
 @app.callback(
